@@ -1,16 +1,16 @@
 #[derive(Debug, Clone)]
-struct ClassWeight<T: Clone + PartialEq> {
-    class: T,
-    weight: u32,
-    minimum: u32,
+pub struct ClassWeight<T: Clone> {
+    pub class: T,
+    pub weight: u32,
+    // minimum: u32,
 }
 
-impl<T: Clone + PartialEq> ClassWeight<T> {
-    pub fn new(class: T, weight: u32, minimum: u32) -> Self {
+impl<T: Clone> ClassWeight<T> {
+    pub fn new(class: T, weight: u32) -> Self {
         Self {
             class,
             weight,
-            minimum,
+            // minimum,
         }
     }
 }
