@@ -17,22 +17,29 @@ impl<T: Clone> ClassWeight<T> {
 
 //
 
+/// Tool for calculating the probability of a symbol when symbols can be divided into a *required* and *optional* category.
+/// When a symbol is required to appear in a string, that distorts the probability of each symbol in a slot.
 pub struct Adjustmotron {
-    required_prev: u32,
-    optional_prev: u32,
+    required_prev: f32,
+    optional_prev: f32,
 }
 
 impl Adjustmotron {
-    pub fn new(required_prev: u32, optional_prev: u32) -> Self {
+    /// `required_prev` - the raw weighting of the required symbol
+    /// `optional_prev` - the raw weight of the optional symbols
+    pub fn new(required_prev: f32, optional_prev: f32) -> Self {
         Self {
             required_prev,
             optional_prev,
         }
     }
 
-    pub fn restricted_weight(&self, remaining_symbols: u32) -> (u32, u32) {
+    /// what are the probabilities for the required and optional symbols given that there must be at least one required symbol in the next `remaining_symbols` symbols
+    /// # returns
+    /// (required_weight, optional_weight)
+    pub fn restricted_weight(&self, remaining_symbols: u32) -> (f32, f32) {
         if remaining_symbols <= 1 {
-            (self.required_prev, 0)
+            (self.required_prev, 0.0)
         } else {
             let fewer = remaining_symbols - 1;
             let (r_w, o_w) = self.weight(fewer);
@@ -43,68 +50,67 @@ impl Adjustmotron {
         }
     }
 
-    pub fn weight(&self, remaining_symbols: u32) -> (u32, u32) {
+    /// The results are intentionally scaled so they can be used inside restricted_weight
+    pub fn weight(&self, remaining_symbols: u32) -> (f32, f32) {
         let sum = self.required_prev + self.optional_prev;
-        let pow = (1..remaining_symbols).into_iter().fold(1, |a, _b| a * sum);
+        let pow = Self::pow1(sum, remaining_symbols as i32 - 1);
         (self.required_prev * pow, self.optional_prev * pow)
+    }
+
+    /// in python, this would be x**n.  LaTeX would use x^n
+    fn pow1(x: f32, n: i32) -> f32 {
+        x.powi(n)
+        // (0..n).fold(1.0, |a, _b| a * x)
     }
 }
 
-/*pub fn adjusted_weights<T: Clone + PartialEq>(
-    required: &ClassWeight<T>,
-    all: &[ClassWeight<T>],
-) -> Vec<ClassWeight<T>> {
-    let idx = all.iter().find(|x| x.class == required.class);
-    panic!()
-}
-*/
 #[cfg(test)]
 mod test {
     use super::Adjustmotron;
 
     #[test]
     pub fn test1() {
-        let atron = Adjustmotron::new(3, 4);
+        let atron = Adjustmotron::new(3.0, 4.0);
         {
             let (a, b) = atron.weight(1);
-            assert_eq!(3, a);
-            assert_eq!(4, b);
+            assert_eq!(3.0, a);
+            assert_eq!(4.0, b);
         }
 
         {
             let (a, b) = atron.restricted_weight(1);
-            assert_eq!(3, a);
-            assert_eq!(0, b);
+            assert_eq!(3.0, a);
+            assert_eq!(0.0, b);
         }
     }
 
     #[test]
     pub fn test2() {
         {
-            let (a, b) = Adjustmotron::new(1, 1).restricted_weight(2);
-            assert_eq!(2, a);
-            assert_eq!(1, b);
+            let (a, b) = Adjustmotron::new(1.0, 1.0).restricted_weight(2);
+            assert_eq!(2.0, a);
+            assert_eq!(1.0, b);
         }
 
         {
-            let (a, b) = Adjustmotron::new(2, 2).restricted_weight(2);
-            assert_eq!(2 * 4, a);
-            assert_eq!(2 * 2, b);
+            let (a, b) = Adjustmotron::new(2.0, 2.0).restricted_weight(2);
+            assert_eq!(2.0 * 4.0, a);
+            assert_eq!(2.0 * 2.0, b);
         }
 
         {
-            let (a, b) = Adjustmotron::new(3, 4).restricted_weight(2);
-            assert_eq!(3 * (4 + 3), a);
-            assert_eq!(4 * 3, b);
+            let (a, b) = Adjustmotron::new(3.0, 4.0).restricted_weight(2);
+            assert_eq!(3.0 * (4.0 + 3.0), a);
+            assert_eq!(4.0 * 3.0, b);
         }
     }
 
     #[test]
     pub fn test3() {
         {
-            let (a, b) = Adjustmotron::new(1, 1).restricted_weight(8);
-            assert_eq!(128, a);
-            assert_eq!(127, b);
+            let (a, b) = Adjustmotron::new(1.0, 1.0).restricted_weight(8);
+            assert_eq!(128.0, a);
+            assert_eq!(127.0, b);
         }
     }
 }

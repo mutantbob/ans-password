@@ -49,30 +49,25 @@ impl Password {
         println!("digest has {} bytes", self.base.len());
         let mut ans = ANSDecode::new(self.base.iter().copied());
 
-        let mut rval = String::new();
-        if false {
-            let chars: Vec<_> = (33..127).map(|x| char::from_u32(x).unwrap()).collect();
-            // println!("debug {}", String::from_iter(chars.iter()));
-            let seq = (0..20).map(|_i| &chars[ans.decode_uniform(chars.len())]);
-            rval = String::from_iter(seq);
-        } else {
-            let weighted_symbols = WeightedSymbols::<()>::bob();
-            for i in 0..30 {
-                let ch = {
-                    let class = ans.decode_from_weights(&weighted_symbols);
-                    *ans.decode_uniform_from(match class {
-                        SimpleClass::Upper => &UPPERS,
-                        SimpleClass::Lower => &LOWERS,
-                        SimpleClass::Digit => &DIGITS,
-                        SimpleClass::Misc => &MISC,
-                    })
-                };
-                // println!("[{}] = '{}'", i, ch);
-                rval.push(ch);
-            }
-        }
-        rval
+        let weighted_symbols = WeightedSymbols::<()>::bob();
+
+        let rval = (0..30).map(|_| weighted_password_symbols(&mut ans, &weighted_symbols));
+        String::from_iter(rval)
     }
+}
+
+pub fn weighted_password_symbols(
+    ans: &mut ANSDecode,
+    weighted_symbols: &WeightedSymbols<SimpleClass>,
+) -> char {
+    let class = ans.decode_from_weights(weighted_symbols);
+    let symbol_subset: &[char] = match class {
+        SimpleClass::Upper => &UPPERS,
+        SimpleClass::Lower => &LOWERS,
+        SimpleClass::Digit => &DIGITS,
+        SimpleClass::Misc => &MISC,
+    };
+    *ans.decode_uniform_from(symbol_subset)
 }
 
 pub struct StdinLineFetcher {
@@ -99,6 +94,14 @@ impl StdinLineFetcher {
     }
 }
 
+impl Default for StdinLineFetcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+//
+
 fn main() {
     let (site, password) = fetch_site_and_key();
 
@@ -121,8 +124,8 @@ fn fetch_site_and_key() -> (String, String) {
     (site, password)
 }
 
-fn display_pins(site: &String, password: &String) {
-    let result = Password::from_site_and_password(&site, &password);
+fn display_pins(site: &str, password: &str) {
+    let result = Password::from_site_and_password(site, password);
 
     println!("result {:x?}", result.base);
 
@@ -177,7 +180,7 @@ mod test {
         );
     }
 
-    fn as_vector_payload(mut str: &str) -> String {
+    fn as_vector_payload(str: &str) -> String {
         String::from_iter(str.chars().map(|ch| match ch {
             '\'' | '\\' => format!("'\\{}', ", ch),
             _ => format!("'{}', ", ch),

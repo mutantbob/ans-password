@@ -39,7 +39,7 @@ impl<'s> ANSDecode<'s> {
         if new_state < 1 << 56 {
             // println!("fetch byte");
             if let Some(val) = self.byte_source.next() {
-                new_state = new_state | ((val as u64) << 56);
+                new_state |= (val as u64) << 56;
             }
         }
         self.state = new_state;
@@ -58,8 +58,8 @@ pub struct WeightedSymbols<S> {
 impl<S> WeightedSymbols<S> {
     pub fn bob() -> WeightedSymbols<SimpleClass> {
         WeightedSymbols::new(&[
-            ClassWeight::new(SimpleClass::Upper, 3),
-            ClassWeight::new(SimpleClass::Lower, 3),
+            ClassWeight::new(SimpleClass::Upper, 5),
+            ClassWeight::new(SimpleClass::Lower, 5),
             ClassWeight::new(SimpleClass::Digit, 1),
             ClassWeight::new(SimpleClass::Misc, 1),
         ])

@@ -1,4 +1,4 @@
-use crate::asymmetric_numeral_system::ANSDecode;
+use crate::asymmetric_numeral_system::{ANSDecode, WeightedSymbols};
 
 pub trait SymbolEmitter<S> {
     fn emit_symbol(&self, ans: &mut ANSDecode) -> S;
