@@ -1,6 +1,8 @@
 use crate::asymmetric_numeral_system::ANSDecode;
 use crate::symbol_generator::SymbolEmitter;
+use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct ClassWeight<T: Clone> {
@@ -38,6 +40,10 @@ impl Adjustmotron {
         }
     }
 
+    /// what are the probabilities for the required and optional symbols given that
+    /// there must be at least `required_count` required symbol in the next `remaining_symbols` symbols
+    /// # returns
+    /// (required_weight, optional_weight)
     pub fn weights_general(&self, required_count: u32, remaining_count: u32) -> (f32, f32) {
         if required_count == 0 {
             self.unrestricted_weight(remaining_count)
@@ -53,26 +59,10 @@ impl Adjustmotron {
         }
     }
 
-    /// what are the probabilities for the required and optional symbols given that there must be at least one required symbol in the next `remaining_symbols` symbols
-    /// # returns
-    /// (required_weight, optional_weight)
-    pub fn restricted_1_weight(&self, remaining_symbols: u32) -> (f32, f32) {
-        if remaining_symbols <= 1 {
-            (self.required_prev, 0.0)
-        } else {
-            let fewer = remaining_symbols - 1;
-            let (r_w, o_w) = self.unrestricted_weight(fewer);
-            let w_a = r_w + o_w;
-            let (r_w, o_w) = self.restricted_1_weight(fewer);
-            let w_b = r_w + o_w;
-            (self.required_prev * w_a, self.optional_prev * w_b)
-        }
-    }
-
     /// The results are intentionally scaled so they can be used inside restricted_weight
     pub fn unrestricted_weight(&self, remaining_symbols: u32) -> (f32, f32) {
         let sum = self.required_prev + self.optional_prev;
-        let pow = Self::pow1(sum, remaining_symbols as i32 - 1);
+        let pow = Self::pow1(sum, remaining_symbols.max(1) as i32 - 1);
         (self.required_prev * pow, self.optional_prev * pow)
     }
 
@@ -86,55 +76,57 @@ impl Adjustmotron {
 //
 //
 
-pub struct SymbolsWithRequirement<S, FA, FB>
-where
-    FA: Fn() -> S,
-    FB: Fn() -> S,
-{
+pub struct SymbolsWithRequirement<S> {
     adjustmotron: Adjustmotron,
-    satisfied: bool,
+    required_count: u32,
     remaining_symbols: u32,
-    fn_a: FA,
-    fn_b: FB,
+    #[allow(clippy::type_complexity)]
+    fn_a: Rc<RefCell<dyn FnMut(&mut ANSDecode) -> S>>,
+    #[allow(clippy::type_complexity)]
+    fn_b: Rc<RefCell<dyn FnMut(&mut ANSDecode) -> S>>,
     phantom_data: PhantomData<S>,
 }
 
-impl<S, FA: Fn() -> S, FB: Fn() -> S> SymbolsWithRequirement<S, FA, FB> {
-    pub fn new(
+impl<S> SymbolsWithRequirement<S> {
+    pub fn new<FA, FB>(
         required_prev: f32,
         optional_prev: f32,
+        required_count: u32,
         remaining_symbols: u32,
         fn_a: FA,
         fn_b: FB,
-    ) -> Self {
+    ) -> Self
+    where
+        FA: FnMut(&mut ANSDecode) -> S + 'static,
+        FB: FnMut(&mut ANSDecode) -> S + 'static,
+    {
         Self {
             adjustmotron: Adjustmotron::new(required_prev, optional_prev),
-            satisfied: false,
+            required_count,
             remaining_symbols,
-            fn_a,
-            fn_b,
+            fn_a: Rc::new(RefCell::new(fn_a)),
+            fn_b: Rc::new(RefCell::new(fn_b)),
             phantom_data: Default::default(),
         }
     }
 }
 
-impl<S, FA: Fn() -> S, FB: Fn() -> S> SymbolEmitter<'_, S> for SymbolsWithRequirement<S, FA, FB> {
+impl<S> SymbolEmitter<'_, S> for SymbolsWithRequirement<S> {
     fn emit_symbol(&mut self, ans: &mut ANSDecode) -> S {
-        let (a, b) = if self.satisfied {
-            self.adjustmotron.unrestricted_weight(1)
-        } else {
-            self.adjustmotron
-                .restricted_1_weight(self.remaining_symbols)
-        };
-        let x = ans.decode_binary(a, b, 1 << 32);
+        let (a, b) = self
+            .adjustmotron
+            .weights_general(self.required_count, self.remaining_symbols);
+        let use_b = ans.decode_binary(a, b, 1 << 32);
 
-        self.remaining_symbols -= 1;
+        self.remaining_symbols = self.remaining_symbols.max(1) - 1;
 
-        if x {
-            self.satisfied = true;
-            (self.fn_a)()
+        if use_b {
+            (self.fn_b.borrow_mut())(ans)
         } else {
-            (self.fn_b)()
+            if self.required_count > 0 {
+                self.required_count -= 1;
+            }
+            (self.fn_a.borrow_mut())(ans)
         }
     }
 }
@@ -152,45 +144,10 @@ mod test {
             assert_eq!(4.0, b);
         }
 
-        {
-            let (a, b) = atron.restricted_1_weight(1);
-            assert_eq!(3.0, a);
-            assert_eq!(0.0, b);
-        }
     }
 
     #[test]
     pub fn test2() {
-        {
-            let (a, b) = Adjustmotron::new(1.0, 1.0).restricted_1_weight(2);
-            assert_eq!(2.0, a);
-            assert_eq!(1.0, b);
-        }
-
-        {
-            let (a, b) = Adjustmotron::new(2.0, 2.0).restricted_1_weight(2);
-            assert_eq!(2.0 * 4.0, a);
-            assert_eq!(2.0 * 2.0, b);
-        }
-
-        {
-            let (a, b) = Adjustmotron::new(3.0, 4.0).restricted_1_weight(2);
-            assert_eq!(3.0 * (4.0 + 3.0), a);
-            assert_eq!(4.0 * 3.0, b);
-        }
-    }
-
-    #[test]
-    pub fn test3() {
-        {
-            let (a, b) = Adjustmotron::new(1.0, 1.0).restricted_1_weight(8);
-            assert_eq!(128.0, a);
-            assert_eq!(127.0, b);
-        }
-    }
-
-    #[test]
-    pub fn test4() {
         let atron = Adjustmotron::new(3.0, 4.0);
 
         {
@@ -201,7 +158,7 @@ mod test {
     }
 
     #[test]
-    pub fn test5() {
+    pub fn test3() {
         {
             let (a, b) = Adjustmotron::new(1.0, 1.0).weights_general(1, 2);
             assert_eq!(2.0, a);
@@ -222,7 +179,7 @@ mod test {
     }
 
     #[test]
-    pub fn test6() {
+    pub fn test4() {
         {
             let (a, b) = Adjustmotron::new(1.0, 1.0).weights_general(1, 8);
             assert_eq!(128.0, a);
@@ -231,7 +188,7 @@ mod test {
     }
 
     #[test]
-    pub fn test7() {
+    pub fn test5() {
         let a11 = Adjustmotron::new(1.0, 1.0);
         {
             let (a, b) = a11.weights_general(2, 2);

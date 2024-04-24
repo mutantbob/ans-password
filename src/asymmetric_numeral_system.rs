@@ -168,6 +168,13 @@ pub struct Weighted2Stage<T> {
     layer1: WeightedSymbols<Rc<dyn Fn(&mut ANSDecode) -> T>>,
 }
 
+impl<T> Weighted2Stage<T> {
+    #[allow(clippy::type_complexity)]
+    pub fn new(classes: WeightedSymbols<Rc<dyn Fn(&mut ANSDecode) -> T>>) -> Self {
+        Self { layer1: classes }
+    }
+}
+
 impl<T> SymbolEmitter<'_, T> for Weighted2Stage<T> {
     fn emit_symbol(&mut self, ans: &mut ANSDecode) -> T {
         let stage2 = ans.decode_from_weights(&self.layer1);

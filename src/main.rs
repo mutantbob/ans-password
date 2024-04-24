@@ -8,6 +8,7 @@ use std::ops::Deref;
 
 mod asymmetric_numeral_system;
 mod required_symbols;
+mod site_rules;
 mod symbol_generator;
 
 const UPPERS: [char; 26] = [
@@ -147,7 +148,9 @@ fn display_pins(site: &str, password: &str) {
     let result64 = result.base64_short();
     println!("base64 = {}", result64);
 
-    let mut weighted_symbols = WeightedSymbols::<()>::bob2();
+    // let mut weighted_symbols = WeightedSymbols::<()>::bob2();
+    let mut weighted_symbols = site_rules::ericsson();
+
     let result_ans = result.via_ans(&mut weighted_symbols);
     println!("ANS = {}", result_ans);
 }
