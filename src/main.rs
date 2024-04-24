@@ -53,9 +53,6 @@ impl Password {
         println!("digest has {} bytes", self.base.len());
         let mut ans = ANSDecode::new(self.base.iter().copied());
 
-        //let weighted_symbols = WeightedSymbols::<()>::bob();
-        //weighted_password_symbols(&mut ans, &weighted_symbols)
-
         let e2: *mut SE = emitter as *mut _; // this is some shenanigans to outsmart the borrow checker until I can figure out https://stackoverflow.com/questions/78379390/explicit-lifetime-for-self-in-trait-seems-to-cause-e0499-cannot-borrow-emitte
 
         let mut rval = String::new();
@@ -120,12 +117,19 @@ fn main() {
 }
 
 fn fetch_site_and_key() -> (String, String) {
-    let mut stdin = StdinLineFetcher::new();
     let args = std::env::args();
     let mut args_iter = args.into_iter();
     let _cmd = args_iter.next();
     let site = args_iter.next();
-    let pin = stdin.read_from_stdin_if_missing(args_iter.next());
+    let pin = if false {
+        let mut stdin = StdinLineFetcher::new();
+        stdin.read_from_stdin_if_missing(args_iter.next())
+    } else {
+        match args_iter.next() {
+            None => rpassword::prompt_password("secret: ").expect("failed to read secret from tty"),
+            Some(val) => val,
+        }
+    };
 
     println!("site = {:?}", site);
     println!("pin = {:?}", pin);
