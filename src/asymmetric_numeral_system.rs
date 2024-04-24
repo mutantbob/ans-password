@@ -156,8 +156,8 @@ impl<S> WeightedSymbols<S> {
 }
 
 impl<'s: 'r, 'r, S> SymbolEmitter<'s, &'r S> for WeightedSymbols<S> {
-    fn emit_symbol(&'s mut self, ans: &mut ANSDecode) -> &'r S {
-        ans.decode_from_weights(self)
+    fn emit_symbol(&'s mut self, ans: &mut ANSDecode) -> Option<&'r S> {
+        Some(ans.decode_from_weights(self))
     }
 }
 
@@ -176,9 +176,9 @@ impl<T> Weighted2Stage<T> {
 }
 
 impl<T> SymbolEmitter<'_, T> for Weighted2Stage<T> {
-    fn emit_symbol(&mut self, ans: &mut ANSDecode) -> T {
+    fn emit_symbol(&mut self, ans: &mut ANSDecode) -> Option<T> {
         let stage2 = ans.decode_from_weights(&self.layer1);
-        stage2(ans)
+        Some(stage2(ans))
     }
 }
 

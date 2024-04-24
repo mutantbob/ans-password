@@ -81,9 +81,9 @@ pub struct SymbolsWithRequirement<S> {
     required_count: u32,
     remaining_symbols: u32,
     #[allow(clippy::type_complexity)]
-    fn_a: Rc<RefCell<dyn FnMut(&mut ANSDecode) -> S>>,
+    fn_a: Rc<RefCell<dyn FnMut(&mut ANSDecode) -> Option<S>>>,
     #[allow(clippy::type_complexity)]
-    fn_b: Rc<RefCell<dyn FnMut(&mut ANSDecode) -> S>>,
+    fn_b: Rc<RefCell<dyn FnMut(&mut ANSDecode) -> Option<S>>>,
     phantom_data: PhantomData<S>,
 }
 
@@ -97,8 +97,8 @@ impl<S> SymbolsWithRequirement<S> {
         fn_b: FB,
     ) -> Self
     where
-        FA: FnMut(&mut ANSDecode) -> S + 'static,
-        FB: FnMut(&mut ANSDecode) -> S + 'static,
+        FA: FnMut(&mut ANSDecode) -> Option<S> + 'static,
+        FB: FnMut(&mut ANSDecode) -> Option<S> + 'static,
     {
         Self {
             adjustmotron: Adjustmotron::new(required_prev, optional_prev),
@@ -112,7 +112,11 @@ impl<S> SymbolsWithRequirement<S> {
 }
 
 impl<S> SymbolEmitter<'_, S> for SymbolsWithRequirement<S> {
-    fn emit_symbol(&mut self, ans: &mut ANSDecode) -> S {
+    fn emit_symbol(&mut self, ans: &mut ANSDecode) -> Option<S> {
+        if self.remaining_symbols < 1 {
+            return None;
+        }
+
         let (a, b) = self
             .adjustmotron
             .weights_general(self.required_count, self.remaining_symbols);
@@ -143,7 +147,6 @@ mod test {
             assert_eq!(3.0, a);
             assert_eq!(4.0, b);
         }
-
     }
 
     #[test]

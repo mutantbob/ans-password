@@ -9,7 +9,7 @@ pub type F1 = Rc<dyn Fn(&mut ANSDecode) -> char>;
 pub fn ericsson() -> SymbolsWithRequirement<char> {
     let fn_u: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&UPPERS));
     let fn_l: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&LOWERS));
-    let fn_d = |ans: &mut ANSDecode| *ans.decode_uniform_from(&DIGITS);
+    let fn_d = |ans: &mut ANSDecode| Some(*ans.decode_uniform_from(&DIGITS));
     let fn_m: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&MISC));
     let syms = WeightedSymbols::new(&[
         ClassWeight::new(fn_u, 5),

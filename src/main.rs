@@ -47,9 +47,9 @@ impl Password {
         String::from_iter(first12)
     }
 
-    pub fn via_ans<'a: 'b, 'b, SE>(&self, emitter: &'a mut SE) -> String
+    pub fn via_ans<'a, SE>(&self, emitter: &'a mut SE) -> String
     where
-        SE: SymbolEmitter<'b, char>,
+        SE: for<'b> SymbolEmitter<'b, char>,
     {
         println!("digest has {} bytes", self.base.len());
         let mut ans = ANSDecode::new(self.base.iter().copied());
@@ -59,7 +59,10 @@ impl Password {
         let mut rval = String::new();
         for _ in 0..30 {
             let ch = unsafe { &mut *e2 }.emit_symbol(&mut ans);
-            rval.push(ch);
+            match ch {
+                Some(ch) => rval.push(ch),
+                None => break,
+            }
         }
         rval
     }
