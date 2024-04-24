@@ -47,15 +47,15 @@ impl Password {
         String::from_iter(first12)
     }
 
-    pub fn via_ans< SE>(&self, emitter: & mut SE) -> String
+    pub fn via_ans<SE>(&self, emitter: &mut SE, max_symbols: usize) -> String
     where
-        SE: for<'b> SymbolEmitter<'b, char>,
+        SE: for<'b> SymbolEmitter<'b, char> + ?Sized,
     {
         println!("digest has {} bytes", self.base.len());
         let mut ans = ANSDecode::new(self.base.iter().copied());
 
         let mut rval = String::new();
-        for _ in 0..30 {
+        for _ in 0..max_symbols {
             let ch = emitter.emit_symbol(&mut ans);
             match ch {
                 Some(ch) => rval.push(ch),
@@ -69,15 +69,18 @@ impl Password {
 pub fn weighted_password_symbols(
     ans: &mut ANSDecode,
     weighted_symbols: &WeightedSymbols<SimpleClass>,
-) -> char {
-    let class = ans.decode_from_weights(weighted_symbols);
-    let symbol_subset: &[char] = match class {
-        SimpleClass::Upper => &UPPERS,
-        SimpleClass::Lower => &LOWERS,
-        SimpleClass::Digit => &DIGITS,
-        SimpleClass::Misc => &MISC,
-    };
-    *ans.decode_uniform_from(symbol_subset)
+) -> Option<char> {
+    if let Some(class) = ans.decode_from_weights(weighted_symbols) {
+        let symbol_subset: &[char] = match class {
+            SimpleClass::Upper => &UPPERS,
+            SimpleClass::Lower => &LOWERS,
+            SimpleClass::Digit => &DIGITS,
+            SimpleClass::Misc => &MISC,
+        };
+        ans.decode_uniform_from(symbol_subset).copied()
+    } else {
+        None
+    }
 }
 
 pub struct StdinLineFetcher {
@@ -134,11 +137,19 @@ fn fetch_site_and_key() -> (String, String) {
     };
 
     println!("site = {:?}", site);
-    println!("pin = {:?}", pin);
+    //println!("secret = {:?}", pin);
 
     let site = site.unwrap();
     let password = pin;
     (site, password)
+}
+
+pub fn symbol_rules_for(site: &str) -> Box<dyn for<'b> SymbolEmitter<'b, char>> {
+    if site.starts_with("ericsson") {
+        Box::new(site_rules::ericsson(12))
+    } else {
+        Box::new(site_rules::bob2())
+    }
 }
 
 fn display_pins(site: &str, password: &str) {
@@ -149,10 +160,7 @@ fn display_pins(site: &str, password: &str) {
     let result64 = result.base64_short();
     println!("base64 = {}", result64);
 
-    // let mut weighted_symbols = WeightedSymbols::<()>::bob2();
-    let mut weighted_symbols = site_rules::ericsson();
-
-    let result_ans = result.via_ans(&mut weighted_symbols);
+    let result_ans = result.via_ans(symbol_rules_for(site).as_mut(), 30);
     println!("ANS = {}", result_ans);
 }
 

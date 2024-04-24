@@ -1,6 +1,5 @@
 use crate::required_symbols::ClassWeight;
 use crate::symbol_generator::SymbolEmitter;
-use crate::{DIGITS, LOWERS, MISC, UPPERS};
 use std::rc::Rc;
 
 pub struct ANSDecode<'a> {
@@ -20,26 +19,33 @@ impl<'s> ANSDecode<'s> {
         }
     }
 
-    pub fn decode_uniform(&mut self, modulus: usize) -> usize {
+    pub fn decode_uniform(&mut self, modulus: usize) -> Option<usize> {
         let rem = self.state % (modulus as u64);
         let x = self.state / (modulus as u64);
-        self.set_state_maybe_load(x);
-        rem as usize
+        if x > 0 {
+            self.set_state_maybe_load(x);
+            Some(rem as usize)
+        } else {
+            None
+        }
     }
 
-    pub fn decode_uniform_from<'a, S>(&mut self, symbols: &'a [S]) -> &'a S {
-        &symbols[self.decode_uniform(symbols.len())]
+    pub fn decode_uniform_from<'a, S>(&mut self, symbols: &'a [S]) -> Option<&'a S> {
+        self.decode_uniform(symbols.len()).map(|idx| &symbols[idx])
     }
 
-    pub fn decode_from_weights<'a, S>(&mut self, weights: &'a WeightedSymbols<S>) -> &'a S {
-        let (symbol, new_state) = weights.do_ans(self.state);
-        self.set_state_maybe_load(new_state);
-        symbol
+    pub fn decode_from_weights<'a, S>(&mut self, weights: &'a WeightedSymbols<S>) -> Option<&'a S> {
+        if let Some((symbol, new_state)) = weights.do_ans(self.state) {
+            self.set_state_maybe_load(new_state);
+            Some(symbol)
+        } else {
+            None
+        }
     }
 
     /// # returns
     /// false if it chooses the `a` weight; true if it chooses the `b` weight
-    pub fn decode_binary(&mut self, a: f32, b: f32, max_quantization: u64) -> bool {
+    pub fn decode_binary(&mut self, a: f32, b: f32, max_quantization: u64) -> Option<bool> {
         let sum = a + b;
         let (a1, b, sum) = if a + b > max_quantization as f32 {
             let a = (a * max_quantization as f32 / sum) as u64;
@@ -52,12 +58,16 @@ impl<'s> ANSDecode<'s> {
         };
         let rem = self.state % sum;
         let x = self.state / sum;
-        if rem < a1 {
-            self.set_state_maybe_load(x * a1 + rem);
-            false
+        if x > 0 {
+            Some(if rem < a1 {
+                self.set_state_maybe_load(x * a1 + rem);
+                false
+            } else {
+                self.set_state_maybe_load(x * b + (rem - a1));
+                true
+            })
         } else {
-            self.set_state_maybe_load(x * b + (rem - a1));
-            true
+            None
         }
     }
 
@@ -80,33 +90,6 @@ pub struct WeightedSymbols<S> {
     weights: Vec<u32>,
     offsets: Vec<u64>,
     symbols: Vec<S>,
-}
-
-impl<S> WeightedSymbols<S> {
-    pub fn bob() -> WeightedSymbols<SimpleClass> {
-        WeightedSymbols::new(&[
-            ClassWeight::new(SimpleClass::Upper, 5),
-            ClassWeight::new(SimpleClass::Lower, 5),
-            ClassWeight::new(SimpleClass::Digit, 1),
-            ClassWeight::new(SimpleClass::Misc, 1),
-        ])
-    }
-
-    pub fn bob2() -> Weighted2Stage<char> {
-        type F1 = Rc<dyn Fn(&mut ANSDecode) -> char>;
-        let fn_u: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&UPPERS));
-        let fn_l: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&LOWERS));
-        let fn_d: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&DIGITS));
-        let fn_m: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&MISC));
-        let syms = WeightedSymbols::new(&[
-            ClassWeight::new(fn_u, 5),
-            ClassWeight::new(fn_l, 5),
-            ClassWeight::new(fn_d, 1),
-            ClassWeight::new(fn_m, 1),
-        ]);
-
-        Weighted2Stage { layer1: syms }
-    }
 }
 
 impl<S: Clone> WeightedSymbols<S> {
@@ -134,15 +117,18 @@ impl<S: Clone> WeightedSymbols<S> {
 }
 
 impl<S> WeightedSymbols<S> {
-    pub fn do_ans(&self, state: u64) -> (&S, u64) {
+    pub fn do_ans(&self, state: u64) -> Option<(&S, u64)> {
         let rem = state % self.weight_sum;
         let x = state / self.weight_sum;
-
-        let i = self.find_bin(rem);
-        let phase = rem - self.offsets[i];
-        let symbol = &self.symbols[i];
-        let new_state = x * (self.weights[i] as u64) + phase;
-        (symbol, new_state)
+        if x > 0 {
+            let i = self.find_bin(rem);
+            let phase = rem - self.offsets[i];
+            let symbol = &self.symbols[i];
+            let new_state = x * (self.weights[i] as u64) + phase;
+            Some((symbol, new_state))
+        } else {
+            None
+        }
     }
 
     pub fn find_bin(&self, remainder: u64) -> usize {
@@ -157,7 +143,7 @@ impl<S> WeightedSymbols<S> {
 
 impl<'s: 'r, 'r, S> SymbolEmitter<'s, &'r S> for WeightedSymbols<S> {
     fn emit_symbol(&'s mut self, ans: &mut ANSDecode) -> Option<&'r S> {
-        Some(ans.decode_from_weights(self))
+        ans.decode_from_weights(self)
     }
 }
 
@@ -165,12 +151,12 @@ impl<'s: 'r, 'r, S> SymbolEmitter<'s, &'r S> for WeightedSymbols<S> {
 
 pub struct Weighted2Stage<T> {
     #[allow(clippy::type_complexity)]
-    layer1: WeightedSymbols<Rc<dyn Fn(&mut ANSDecode) -> T>>,
+    layer1: WeightedSymbols<Rc<dyn Fn(&mut ANSDecode) -> Option<T>>>,
 }
 
 impl<T> Weighted2Stage<T> {
     #[allow(clippy::type_complexity)]
-    pub fn new(classes: WeightedSymbols<Rc<dyn Fn(&mut ANSDecode) -> T>>) -> Self {
+    pub fn new(classes: WeightedSymbols<Rc<dyn Fn(&mut ANSDecode) -> Option<T>>>) -> Self {
         Self { layer1: classes }
     }
 }
@@ -178,7 +164,7 @@ impl<T> Weighted2Stage<T> {
 impl<T> SymbolEmitter<'_, T> for Weighted2Stage<T> {
     fn emit_symbol(&mut self, ans: &mut ANSDecode) -> Option<T> {
         let stage2 = ans.decode_from_weights(&self.layer1);
-        Some(stage2(ans))
+        stage2.and_then(|f| f(ans))
     }
 }
 

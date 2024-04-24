@@ -120,7 +120,10 @@ impl<S> SymbolEmitter<'_, S> for SymbolsWithRequirement<S> {
         let (a, b) = self
             .adjustmotron
             .weights_general(self.required_count, self.remaining_symbols);
-        let use_b = ans.decode_binary(a, b, 1 << 32);
+        let use_b = match ans.decode_binary(a, b, 1 << 32) {
+            None => return None,
+            Some(x) => x,
+        };
 
         self.remaining_symbols = self.remaining_symbols.max(1) - 1;
 
