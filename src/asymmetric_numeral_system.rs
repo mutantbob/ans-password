@@ -164,6 +164,7 @@ impl<'s: 'r, 'r, S> SymbolEmitter<'s, &'r S> for WeightedSymbols<S> {
 //
 
 pub struct Weighted2Stage<T> {
+    #[allow(clippy::type_complexity)]
     layer1: WeightedSymbols<Rc<dyn Fn(&mut ANSDecode) -> T>>,
 }
 

@@ -12,7 +12,12 @@ pub struct UniformSymbolSet<S> {
 
 impl<'s, T: Clone> SymbolEmitter<'s, T> for UniformSymbolSet<T> {
     fn emit_symbol(&'s mut self, ans: &mut ANSDecode) -> T {
-        let idx = ans.decode_uniform(self.symbols.len());
-        self.symbols.get(idx).unwrap().clone()
+        ans.decode_uniform_from(&self.symbols).clone()
+    }
+}
+
+impl<'s, T: Clone, U: AsRef<[T]>> SymbolEmitter<'s, T> for U {
+    fn emit_symbol(&'s mut self, ans: &mut ANSDecode) -> T {
+        ans.decode_uniform_from(self.as_ref()).clone()
     }
 }
