@@ -47,18 +47,16 @@ impl Password {
         String::from_iter(first12)
     }
 
-    pub fn via_ans<'a, SE>(&self, emitter: &'a mut SE) -> String
+    pub fn via_ans< SE>(&self, emitter: & mut SE) -> String
     where
         SE: for<'b> SymbolEmitter<'b, char>,
     {
         println!("digest has {} bytes", self.base.len());
         let mut ans = ANSDecode::new(self.base.iter().copied());
 
-        let e2: *mut SE = emitter as *mut _; // this is some shenanigans to outsmart the borrow checker until I can figure out https://stackoverflow.com/questions/78379390/explicit-lifetime-for-self-in-trait-seems-to-cause-e0499-cannot-borrow-emitte
-
         let mut rval = String::new();
         for _ in 0..30 {
-            let ch = unsafe { &mut *e2 }.emit_symbol(&mut ans);
+            let ch = emitter.emit_symbol(&mut ans);
             match ch {
                 Some(ch) => rval.push(ch),
                 None => break,
