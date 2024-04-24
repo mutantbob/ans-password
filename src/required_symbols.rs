@@ -38,24 +38,39 @@ impl Adjustmotron {
         }
     }
 
+    pub fn weights_general(&self, required_count: u32, remaining_count: u32) -> (f32, f32) {
+        if required_count == 0 {
+            self.unrestricted_weight(remaining_count)
+        } else if remaining_count <= required_count {
+            (self.required_prev.powi(remaining_count as i32), 0.0)
+        } else {
+            let fewer = remaining_count - 1;
+            let (r_w, o_w) = self.weights_general(required_count - 1, fewer);
+            let w_a = r_w + o_w;
+            let (r_w, o_w) = self.weights_general(required_count, fewer);
+            let w_b = r_w + o_w;
+            (self.required_prev * w_a, self.optional_prev * w_b)
+        }
+    }
+
     /// what are the probabilities for the required and optional symbols given that there must be at least one required symbol in the next `remaining_symbols` symbols
     /// # returns
     /// (required_weight, optional_weight)
-    pub fn restricted_weight(&self, remaining_symbols: u32) -> (f32, f32) {
+    pub fn restricted_1_weight(&self, remaining_symbols: u32) -> (f32, f32) {
         if remaining_symbols <= 1 {
             (self.required_prev, 0.0)
         } else {
             let fewer = remaining_symbols - 1;
-            let (r_w, o_w) = self.weight(fewer);
+            let (r_w, o_w) = self.unrestricted_weight(fewer);
             let w_a = r_w + o_w;
-            let (r_w, o_w) = self.restricted_weight(fewer);
+            let (r_w, o_w) = self.restricted_1_weight(fewer);
             let w_b = r_w + o_w;
             (self.required_prev * w_a, self.optional_prev * w_b)
         }
     }
 
     /// The results are intentionally scaled so they can be used inside restricted_weight
-    pub fn weight(&self, remaining_symbols: u32) -> (f32, f32) {
+    pub fn unrestricted_weight(&self, remaining_symbols: u32) -> (f32, f32) {
         let sum = self.required_prev + self.optional_prev;
         let pow = Self::pow1(sum, remaining_symbols as i32 - 1);
         (self.required_prev * pow, self.optional_prev * pow)
@@ -106,9 +121,10 @@ impl<S, FA: Fn() -> S, FB: Fn() -> S> SymbolsWithRequirement<S, FA, FB> {
 impl<S, FA: Fn() -> S, FB: Fn() -> S> SymbolEmitter<'_, S> for SymbolsWithRequirement<S, FA, FB> {
     fn emit_symbol(&mut self, ans: &mut ANSDecode) -> S {
         let (a, b) = if self.satisfied {
-            self.adjustmotron.weight(1)
+            self.adjustmotron.unrestricted_weight(1)
         } else {
-            self.adjustmotron.restricted_weight(self.remaining_symbols)
+            self.adjustmotron
+                .restricted_1_weight(self.remaining_symbols)
         };
         let x = ans.decode_binary(a, b, 1 << 32);
 
@@ -131,13 +147,13 @@ mod test {
     pub fn test1() {
         let atron = Adjustmotron::new(3.0, 4.0);
         {
-            let (a, b) = atron.weight(1);
+            let (a, b) = atron.unrestricted_weight(1);
             assert_eq!(3.0, a);
             assert_eq!(4.0, b);
         }
 
         {
-            let (a, b) = atron.restricted_weight(1);
+            let (a, b) = atron.restricted_1_weight(1);
             assert_eq!(3.0, a);
             assert_eq!(0.0, b);
         }
@@ -146,19 +162,19 @@ mod test {
     #[test]
     pub fn test2() {
         {
-            let (a, b) = Adjustmotron::new(1.0, 1.0).restricted_weight(2);
+            let (a, b) = Adjustmotron::new(1.0, 1.0).restricted_1_weight(2);
             assert_eq!(2.0, a);
             assert_eq!(1.0, b);
         }
 
         {
-            let (a, b) = Adjustmotron::new(2.0, 2.0).restricted_weight(2);
+            let (a, b) = Adjustmotron::new(2.0, 2.0).restricted_1_weight(2);
             assert_eq!(2.0 * 4.0, a);
             assert_eq!(2.0 * 2.0, b);
         }
 
         {
-            let (a, b) = Adjustmotron::new(3.0, 4.0).restricted_weight(2);
+            let (a, b) = Adjustmotron::new(3.0, 4.0).restricted_1_weight(2);
             assert_eq!(3.0 * (4.0 + 3.0), a);
             assert_eq!(4.0 * 3.0, b);
         }
@@ -167,9 +183,91 @@ mod test {
     #[test]
     pub fn test3() {
         {
-            let (a, b) = Adjustmotron::new(1.0, 1.0).restricted_weight(8);
+            let (a, b) = Adjustmotron::new(1.0, 1.0).restricted_1_weight(8);
             assert_eq!(128.0, a);
             assert_eq!(127.0, b);
+        }
+    }
+
+    #[test]
+    pub fn test4() {
+        let atron = Adjustmotron::new(3.0, 4.0);
+
+        {
+            let (a, b) = atron.weights_general(1, 1);
+            assert_eq!(3.0, a);
+            assert_eq!(0.0, b);
+        }
+    }
+
+    #[test]
+    pub fn test5() {
+        {
+            let (a, b) = Adjustmotron::new(1.0, 1.0).weights_general(1, 2);
+            assert_eq!(2.0, a);
+            assert_eq!(1.0, b);
+        }
+
+        {
+            let (a, b) = Adjustmotron::new(2.0, 2.0).weights_general(1, 2);
+            assert_eq!(2.0 * 4.0, a);
+            assert_eq!(2.0 * 2.0, b);
+        }
+
+        {
+            let (a, b) = Adjustmotron::new(3.0, 4.0).weights_general(1, 2);
+            assert_eq!(3.0 * (4.0 + 3.0), a);
+            assert_eq!(4.0 * 3.0, b);
+        }
+    }
+
+    #[test]
+    pub fn test6() {
+        {
+            let (a, b) = Adjustmotron::new(1.0, 1.0).weights_general(1, 8);
+            assert_eq!(128.0, a);
+            assert_eq!(127.0, b);
+        }
+    }
+
+    #[test]
+    pub fn test7() {
+        let a11 = Adjustmotron::new(1.0, 1.0);
+        {
+            let (a, b) = a11.weights_general(2, 2);
+            assert_eq!(1.0, a);
+            assert_eq!(0.0, b);
+        }
+        {
+            let (a, b) = a11.weights_general(2, 3);
+            assert_eq!(3.0, a);
+            assert_eq!(1.0, b);
+        }
+        {
+            let (a, b) = a11.weights_general(2, 4);
+            assert_eq!(7.0, a);
+            assert_eq!(4.0, b);
+        }
+        {
+            let (a, b) = a11.weights_general(2, 5);
+            assert_eq!(15.0, a);
+            assert_eq!(11.0, b);
+        }
+        {
+            let (a, b) = a11.weights_general(2, 6);
+            assert_eq!(31.0, a);
+            assert_eq!(26.0, b);
+        }
+        {
+            let (a, b) = a11.weights_general(2, 7);
+            assert_eq!(63.0, a);
+            assert_eq!((64 - 7) as f32, b);
+        }
+
+        {
+            let (a, b) = a11.weights_general(2, 8);
+            assert_eq!(127.0, a);
+            assert_eq!(120.0, b);
         }
     }
 }
