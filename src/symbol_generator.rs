@@ -1,7 +1,7 @@
-use crate::asymmetric_numeral_system::{ANSDecode, WeightedSymbols};
+use crate::asymmetric_numeral_system::ANSDecode;
 
-pub trait SymbolEmitter<S> {
-    fn emit_symbol(&self, ans: &mut ANSDecode) -> S;
+pub trait SymbolEmitter<'s, S> {
+    fn emit_symbol(&'s mut self, ans: &mut ANSDecode) -> S;
 }
 
 //
@@ -10,8 +10,8 @@ pub struct UniformSymbolSet<S> {
     symbols: Vec<S>,
 }
 
-impl<T: Clone> SymbolEmitter<T> for UniformSymbolSet<T> {
-    fn emit_symbol(&self, ans: &mut ANSDecode) -> T {
+impl<'s, T: Clone> SymbolEmitter<'s, T> for UniformSymbolSet<T> {
+    fn emit_symbol(&'s mut self, ans: &mut ANSDecode) -> T {
         let idx = ans.decode_uniform(self.symbols.len());
         self.symbols.get(idx).unwrap().clone()
     }

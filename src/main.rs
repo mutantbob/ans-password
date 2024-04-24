@@ -1,4 +1,5 @@
 use crate::asymmetric_numeral_system::{ANSDecode, SimpleClass, WeightedSymbols};
+use crate::symbol_generator::SymbolEmitter;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use sha1::{Digest, Sha1};
@@ -45,14 +46,24 @@ impl Password {
         String::from_iter(first12)
     }
 
-    pub fn via_ans(&self) -> String {
+    pub fn via_ans<'a: 'b, 'b, SE>(&self, emitter: &'a mut SE) -> String
+    where
+        SE: SymbolEmitter<'b, char>,
+    {
         println!("digest has {} bytes", self.base.len());
         let mut ans = ANSDecode::new(self.base.iter().copied());
 
-        let weighted_symbols = WeightedSymbols::<()>::bob();
+        //let weighted_symbols = WeightedSymbols::<()>::bob();
+        //weighted_password_symbols(&mut ans, &weighted_symbols)
 
-        let rval = (0..30).map(|_| weighted_password_symbols(&mut ans, &weighted_symbols));
-        String::from_iter(rval)
+        let e2: *mut SE = emitter as *mut _; // this is some shenanigans to outsmart the borrow checker until I can figure out https://stackoverflow.com/questions/78379390/explicit-lifetime-for-self-in-trait-seems-to-cause-e0499-cannot-borrow-emitte
+
+        let mut rval = String::new();
+        for _ in 0..30 {
+            let ch = unsafe { &mut *e2 }.emit_symbol(&mut ans);
+            rval.push(ch);
+        }
+        rval
     }
 }
 
@@ -132,7 +143,8 @@ fn display_pins(site: &str, password: &str) {
     let result64 = result.base64_short();
     println!("base64 = {}", result64);
 
-    let result_ans = result.via_ans();
+    let mut weighted_symbols = WeightedSymbols::<()>::bob2();
+    let result_ans = result.via_ans(&mut weighted_symbols);
     println!("ANS = {}", result_ans);
 }
 

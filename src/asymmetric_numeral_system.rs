@@ -1,4 +1,7 @@
 use crate::required_symbols::ClassWeight;
+use crate::symbol_generator::SymbolEmitter;
+use crate::{DIGITS, LOWERS, MISC, UPPERS};
+use std::rc::Rc;
 
 pub struct ANSDecode<'a> {
     byte_source: Box<dyn Iterator<Item = u8> + 'a>,
@@ -34,6 +37,30 @@ impl<'s> ANSDecode<'s> {
         symbol
     }
 
+    /// # returns
+    /// false if it chooses the `a` weight; true if it chooses the `b` weight
+    pub fn decode_binary(&mut self, a: f32, b: f32, max_quantization: u64) -> bool {
+        let sum = a + b;
+        let (a1, b, sum) = if a + b > max_quantization as f32 {
+            let a = (a * max_quantization as f32 / sum) as u64;
+            let b = max_quantization - a;
+            (a, b, max_quantization)
+        } else {
+            let a = a as u64;
+            let b = b as u64;
+            (a, b, a + b)
+        };
+        let rem = self.state % sum;
+        let x = self.state / sum;
+        if rem < a1 {
+            self.set_state_maybe_load(x * a1 + rem);
+            false
+        } else {
+            self.set_state_maybe_load(x * b + (rem - a1));
+            true
+        }
+    }
+
     fn set_state_maybe_load(&mut self, mut new_state: u64) {
         // println!("debug state {:x} -> {:x}", self.state, new_state);
         if new_state < 1 << 56 {
@@ -63,6 +90,22 @@ impl<S> WeightedSymbols<S> {
             ClassWeight::new(SimpleClass::Digit, 1),
             ClassWeight::new(SimpleClass::Misc, 1),
         ])
+    }
+
+    pub fn bob2() -> Weighted2Stage<char> {
+        type F1 = Rc<dyn Fn(&mut ANSDecode) -> char>;
+        let fn_u: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&UPPERS));
+        let fn_l: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&LOWERS));
+        let fn_d: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&DIGITS));
+        let fn_m: F1 = Rc::new(|ans: &mut ANSDecode| *ans.decode_uniform_from(&MISC));
+        let syms = WeightedSymbols::new(&[
+            ClassWeight::new(fn_u, 5),
+            ClassWeight::new(fn_l, 5),
+            ClassWeight::new(fn_d, 1),
+            ClassWeight::new(fn_m, 1),
+        ]);
+
+        Weighted2Stage { layer1: syms }
     }
 }
 
@@ -109,6 +152,25 @@ impl<S> WeightedSymbols<S> {
             }
         }
         self.offsets.len() - 1
+    }
+}
+
+impl<'s: 'r, 'r, S> SymbolEmitter<'s, &'r S> for WeightedSymbols<S> {
+    fn emit_symbol(&'s mut self, ans: &mut ANSDecode) -> &'r S {
+        ans.decode_from_weights(self)
+    }
+}
+
+//
+
+pub struct Weighted2Stage<T> {
+    layer1: WeightedSymbols<Rc<dyn Fn(&mut ANSDecode) -> T>>,
+}
+
+impl<T> SymbolEmitter<'_, T> for Weighted2Stage<T> {
+    fn emit_symbol(&mut self, ans: &mut ANSDecode) -> T {
+        let stage2 = ans.decode_from_weights(&self.layer1);
+        stage2(ans)
     }
 }
 

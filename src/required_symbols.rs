@@ -1,3 +1,7 @@
+use crate::asymmetric_numeral_system::ANSDecode;
+use crate::symbol_generator::SymbolEmitter;
+use std::marker::PhantomData;
+
 #[derive(Debug, Clone)]
 pub struct ClassWeight<T: Clone> {
     pub class: T,
@@ -61,6 +65,61 @@ impl Adjustmotron {
     fn pow1(x: f32, n: i32) -> f32 {
         x.powi(n)
         // (0..n).fold(1.0, |a, _b| a * x)
+    }
+}
+
+//
+//
+
+pub struct SymbolsWithRequirement<S, FA, FB>
+where
+    FA: Fn() -> S,
+    FB: Fn() -> S,
+{
+    adjustmotron: Adjustmotron,
+    satisfied: bool,
+    remaining_symbols: u32,
+    fn_a: FA,
+    fn_b: FB,
+    phantom_data: PhantomData<S>,
+}
+
+impl<S, FA: Fn() -> S, FB: Fn() -> S> SymbolsWithRequirement<S, FA, FB> {
+    pub fn new(
+        required_prev: f32,
+        optional_prev: f32,
+        remaining_symbols: u32,
+        fn_a: FA,
+        fn_b: FB,
+    ) -> Self {
+        Self {
+            adjustmotron: Adjustmotron::new(required_prev, optional_prev),
+            satisfied: false,
+            remaining_symbols,
+            fn_a,
+            fn_b,
+            phantom_data: Default::default(),
+        }
+    }
+}
+
+impl<S, FA: Fn() -> S, FB: Fn() -> S> SymbolEmitter<'_, S> for SymbolsWithRequirement<S, FA, FB> {
+    fn emit_symbol(&mut self, ans: &mut ANSDecode) -> S {
+        let (a, b) = if self.satisfied {
+            self.adjustmotron.weight(1)
+        } else {
+            self.adjustmotron.restricted_weight(self.remaining_symbols)
+        };
+        let x = ans.decode_binary(a, b, 1 << 32);
+
+        self.remaining_symbols -= 1;
+
+        if x {
+            self.satisfied = true;
+            (self.fn_a)()
+        } else {
+            (self.fn_b)()
+        }
     }
 }
 
